@@ -1,0 +1,12 @@
+[project]
+name = "vla-manipulation-research"
+version = "0.1.0"
+description = "Анализ открытой проблемы в мультимодальных моделях сенсомоторной координации для манипуляции"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "pandas",
+    "jupyterlab",
+]
