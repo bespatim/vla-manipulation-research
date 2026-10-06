@@ -226,12 +226,27 @@ def to_env_action(action: np.ndarray) -> np.ndarray:
 # --------------------------------------------------------------------------------------
 # Эпизод и оценка
 # --------------------------------------------------------------------------------------
-def run_episode(policy, env, instruction, init_state, max_steps, objects, video_path=None, log_path=None):
+def make_goal_check(env, goal_on):
+    """Своя цель «A лежит на B» через предикат LIBERO On(A, B) = B.check_ontop(A)."""
+    if goal_on is None:
+        return None
+    obj, support = goal_on
+    states = env.env.object_states_dict
+    missing = [o for o in goal_on if o not in states]
+    assert not missing, f"нет предметов {missing} в сцене; есть: {sorted(states)}"
+    return lambda: bool(states[support].check_ontop(states[obj]))
+
+
+def run_episode(policy, env, instruction, init_state, max_steps, objects, video_path=None, log_path=None,
+                goal_on=None, use_env_goal=True):
+    """goal_on=(A, B): успех, когда A лежит на B. use_env_goal=False: не засчитывать исходную цель сцены
+    (нужно, когда команда своя, а сцена от другой задачи)."""
     import imageio
 
     env.reset()
     obs = env.set_init_state(init_state)
     probe = ContactProbe(env, objects)
+    goal_check = make_goal_check(env, goal_on)
     rows, frames, success, t, step = [], [], False, 0, 0
     infer_time = 0.0
     while t < max_steps + NUM_STEPS_WAIT:
@@ -265,7 +280,7 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects, video_
         obs, _, done, _ = env.step(action.tolist())
         t += 1
         step += 1
-        if done:
+        if (goal_check is not None and goal_check()) or (use_env_goal and done):
             success = True
             break
 
@@ -281,7 +296,9 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects, video_
 
 
 def evaluate(policy, suite_name, task_ids=None, trials_per_task=1, out_dir="results/libero",
-             save_video=True, seed=7):
+             save_video=True, seed=7, instruction=None, goal_on=None, max_steps=None):
+    """instruction — своя команда вместо задачи сцены; goal_on=(A, B) — своя проверка успеха «A на B».
+    Со своей командой исходная цель сцены не засчитывается."""
     import random
 
     random.seed(seed)
@@ -302,8 +319,10 @@ def evaluate(policy, suite_name, task_ids=None, trials_per_task=1, out_dir="resu
 
         task_ids = range(benchmark.get_benchmark_dict()[suite_name]().n_tasks)
     for task_id in task_ids:
-        env, instruction, init_states, _ = make_env(suite_name, task_id)
-        objects = list(env.obj_of_interest)
+        env, task_instruction, init_states, _ = make_env(suite_name, task_id)
+        command = instruction or task_instruction
+        objects = list(goal_on) if goal_on else []
+        objects += [o for o in env.obj_of_interest if o not in objects]
         if isinstance(policy, type) and policy is ScriptedPolicy:
             make_policy = lambda: ScriptedPolicy(objects[0])
         else:
@@ -311,10 +330,10 @@ def evaluate(policy, suite_name, task_ids=None, trials_per_task=1, out_dir="resu
         for trial in range(trials_per_task):
             name = f"{suite_name}_task{task_id:02d}_trial{trial:02d}"
             t0 = time.time()
-            r = run_episode(make_policy(), env, instruction, init_states[trial], MAX_STEPS[suite_name], objects,
-                            video_path=out / f"{name}.mp4" if save_video else None,
-                            log_path=out / f"{name}.csv")
-            r.update({"suite": suite_name, "task_id": task_id, "trial": trial, "instruction": instruction,
+            r = run_episode(make_policy(), env, command, init_states[trial], max_steps or MAX_STEPS[suite_name],
+                            objects, video_path=out / f"{name}.mp4" if save_video else None,
+                            log_path=out / f"{name}.csv", goal_on=goal_on, use_env_goal=instruction is None)
+            r.update({"suite": suite_name, "task_id": task_id, "trial": trial, "instruction": command,
                       "objects": " ".join(objects), "wall_s": round(time.time() - t0, 1)})
             results.append(r)
             done = sum(x["success"] for x in results)
@@ -326,10 +345,15 @@ def evaluate(policy, suite_name, task_ids=None, trials_per_task=1, out_dir="resu
                 w.writerows(results)
         env.close()
     rate = 100 * sum(x["success"] for x in results) / len(results)
-    print(f"\nУспех: {rate:.1f}% на {len(results)} эпизодах | у авторов: {PAPER_SUCCESS.get(suite_name)}%")
+    if instruction is None:
+        print(f"\nУспех: {rate:.1f}% на {len(results)} эпизодах | у авторов: {PAPER_SUCCESS.get(suite_name)}%")
+    else:
+        goal = f"{goal_on[0]} на {goal_on[1]}" if goal_on else "не задана — смотрите видео"
+        print(f"\nСвоя команда «{instruction}» | цель: {goal} | успех: {rate:.0f}% на {len(results)} эпизодах")
     (out / "meta.json").write_text(json.dumps({
         "suite": suite_name, "episodes": len(results), "success_rate": rate,
-        "paper_success_rate": PAPER_SUCCESS.get(suite_name),
+        "paper_success_rate": PAPER_SUCCESS.get(suite_name) if instruction is None else None,
+        "instruction": instruction, "goal_on": goal_on,
         "checkpoint": getattr(policy, "checkpoint", "scripted"),
         "load_in_4bit": getattr(policy, "load_in_4bit", None), "seed": seed}, ensure_ascii=False, indent=2))
     return results
@@ -348,6 +372,7 @@ def save_preview(suite_name: str, task_id: int, path: str) -> None:
     wrist = obs["robot0_eye_in_hand_image"][::-1, ::-1]
     Image.fromarray(np.concatenate([raw, model_view, wrist], axis=1)).save(path)
     print(f"{suite_name}, задача {task_id}: «{instruction}» | целевые предметы: {list(env.obj_of_interest)}")
+    print("все предметы сцены:", sorted(env.env.object_states_dict))
     env.close()
 
 
@@ -361,6 +386,10 @@ def main() -> None:
     p.add_argument("--out", default="results/libero")
     p.add_argument("--no-video", action="store_true")
     p.add_argument("--preview", default=None, help="только сохранить превью сцены (без модели) и выйти")
+    p.add_argument("--instruction", default=None, help="своя команда роботу (по-английски) вместо задачи сцены")
+    p.add_argument("--goal-on", nargs=2, metavar=("A", "B"), default=None,
+                   help="своя проверка успеха: предмет A лежит на предмете B, например cookies_1 plate_1")
+    p.add_argument("--max-steps", type=int, default=None)
     args = p.parse_args()
 
     # Colab передаёт дочерним процессам свой inline-бэкенд matplotlib, которого нет в venv
@@ -371,7 +400,9 @@ def main() -> None:
         save_preview(args.suite, (args.tasks or [0])[0], args.preview)
         return
     policy = ScriptedPolicy if args.policy == "scripted" else OpenVLAPolicy(args.suite)
-    evaluate(policy, args.suite, args.tasks, args.trials, args.out, save_video=not args.no_video)
+    evaluate(policy, args.suite, args.tasks, args.trials, args.out, save_video=not args.no_video,
+             instruction=args.instruction, goal_on=tuple(args.goal_on) if args.goal_on else None,
+             max_steps=args.max_steps)
 
 
 if __name__ == "__main__":
