@@ -1,0 +1,2 @@
+success,steps,infer_s_per_step,suite,task_id,trial,instruction,objects,wall_s
+True,83,0.808743945087295,libero_spatial,0,0,pick up the black bowl between the plate and the ramekin and place it on the plate,akita_black_bowl_1 plate_1,74.6

@@ -1,0 +1,14 @@
+{
+  "suite": "libero_spatial",
+  "episodes": 1,
+  "success_rate": 0.0,
+  "paper_success_rate": null,
+  "instruction": "pick up the red cookie box and place it on the plate",
+  "goal_on": [
+    "cookies_1",
+    "plate_1"
+  ],
+  "checkpoint": "openvla/openvla-7b-finetuned-libero-spatial",
+  "load_in_4bit": true,
+  "seed": 7
+}
