@@ -63,8 +63,12 @@ def save_episode(f, out: Path) -> None:
               for b in f["steps/observation/image_0"].bytes_list.value]
     task = instruction(f)
 
-    # Предположение: углы — неподвижные оси xyz (как в tf.transformations 'sxyz')
-    quat = Rotation.from_euler("xyz", state[:, 3:6]).as_quat(scalar_first=True)
+    # Углы в BridgeData — от R_ee · DEFAULT_ROTATIONᵀ (R = Rz·Ry·Rx), поэтому ориентация самого
+    # захвата (ee_gripper_link в системе основания Interbotix) = R(углы) · DEFAULT_ROTATION.
+    # Источник: rail-berkeley/bridge_data_robot, widowx_controller.py и transformation_utils.py
+    default_rotation = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], dtype=float)
+    r_ee = Rotation.from_euler("xyz", state[:, 3:6]).as_matrix() @ default_rotation
+    quat = Rotation.from_matrix(r_ee).as_quat(scalar_first=True)
 
     with open(out / "trajectory.csv", "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
