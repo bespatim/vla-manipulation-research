@@ -363,6 +363,9 @@ def main() -> None:
     p.add_argument("--preview", default=None, help="только сохранить превью сцены (без модели) и выйти")
     args = p.parse_args()
 
+    # Colab передаёт дочерним процессам свой inline-бэкенд matplotlib, которого нет в venv
+    if "inline" in os.environ.get("MPLBACKEND", ""):
+        os.environ["MPLBACKEND"] = "Agg"
     setup_libero(args.libero_root)
     if args.preview:
         save_preview(args.suite, (args.tasks or [0])[0], args.preview)
