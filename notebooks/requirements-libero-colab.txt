@@ -1,0 +1,28 @@
+# Окружение Python 3.10 для OpenVLA + LIBERO в Colab.
+# Версии модели — как у авторов OpenVLA (README, раздел LIBERO): PyTorch 2.2.0, transformers 4.40.1.
+# bddl==1.0.1 ставится отдельно с --no-deps (тянет лишнее, в т.ч. pytest/jupyter).
+
+# Модель
+torch==2.2.0
+transformers==4.40.1
+tokenizers==0.19.1
+timm==0.9.10
+accelerate==0.30.1
+bitsandbytes==0.43.1
+sentencepiece==0.1.99
+numpy==1.26.4
+# Предобработка кадра как при обучении OpenVLA (JPEG + lanczos3 + центральный кроп); CPU-версия не трогает видеокарту
+tensorflow-cpu==2.15.1
+
+# Симулятор LIBERO
+robosuite==1.4.1
+mujoco==3.2.7
+easydict
+gym
+cloudpickle
+future
+networkx
+pyyaml
+matplotlib
+pillow
+imageio[ffmpeg]

@@ -335,6 +335,22 @@ def evaluate(policy, suite_name, task_ids=None, trials_per_task=1, out_dir="resu
     return results
 
 
+def save_preview(suite_name: str, task_id: int, path: str) -> None:
+    """Три кадра без модели: сырая внешняя камера | что получает модель | камера на запястье."""
+    from PIL import Image
+
+    env, instruction, init_states, _ = make_env(suite_name, task_id)
+    env.reset()
+    obs = env.set_init_state(init_states[0])
+    raw = obs["agentview_image"][::-1, ::-1]
+    model_view = np.asarray(Image.fromarray(center_crop(preprocess_image(obs["agentview_image"])))
+                            .resize(raw.shape[1::-1]))
+    wrist = obs["robot0_eye_in_hand_image"][::-1, ::-1]
+    Image.fromarray(np.concatenate([raw, model_view, wrist], axis=1)).save(path)
+    print(f"{suite_name}, задача {task_id}: «{instruction}» | целевые предметы: {list(env.obj_of_interest)}")
+    env.close()
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--libero-root", required=True)
@@ -344,9 +360,13 @@ def main() -> None:
     p.add_argument("--policy", choices=["openvla", "scripted"], default="openvla")
     p.add_argument("--out", default="results/libero")
     p.add_argument("--no-video", action="store_true")
+    p.add_argument("--preview", default=None, help="только сохранить превью сцены (без модели) и выйти")
     args = p.parse_args()
 
     setup_libero(args.libero_root)
+    if args.preview:
+        save_preview(args.suite, (args.tasks or [0])[0], args.preview)
+        return
     policy = ScriptedPolicy if args.policy == "scripted" else OpenVLAPolicy(args.suite)
     evaluate(policy, args.suite, args.tasks, args.trials, args.out, save_video=not args.no_video)
 
