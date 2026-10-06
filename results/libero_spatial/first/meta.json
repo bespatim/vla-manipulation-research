@@ -1,0 +1,9 @@
+{
+  "suite": "libero_spatial",
+  "episodes": 1,
+  "success_rate": 100.0,
+  "paper_success_rate": 84.7,
+  "checkpoint": "openvla/openvla-7b-finetuned-libero-spatial",
+  "load_in_4bit": true,
+  "seed": 7
+}
