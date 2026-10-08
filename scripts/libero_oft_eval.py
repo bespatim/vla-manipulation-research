@@ -126,35 +126,99 @@ def make_goal_check(env, goal_on):
 # Модель
 # --------------------------------------------------------------------------------------
 class OFTPolicy:
-    """OpenVLA-OFT, загруженная так же, как в run_libero_eval.initialize_model авторов."""
+    """OpenVLA-OFT, загруженная так же, как в run_libero_eval.initialize_model авторов.
 
-    def __init__(self, suite_name: str):
+    precision="bf16"      — путь авторов без изменений (нужна видеокарта с bfloat16 и ≥ 20 ГБ: L4, A100);
+    precision="4bit-fp16" — для бесплатной T4: модель сжата до 4 бит, вычисления во float16 вместо
+                            bfloat16 (T4 его не поддерживает). Код авторов жёстко задаёт bfloat16 только
+                            при загрузке и в get_vla_action — эти две части повторены здесь с другим типом.
+    precision="auto"      — bf16, если видеокарта позволяет, иначе 4bit-fp16.
+    """
+
+    def __init__(self, suite_name: str, precision: str = "auto"):
         import torch
         from experiments.robot.libero.run_libero_eval import GenerateConfig, check_unnorm_key
         from experiments.robot.openvla_utils import get_action_head, get_processor, get_proprio_projector
         from experiments.robot.robot_utils import get_image_resize_size, get_model, set_seed_everywhere
 
+        if precision == "auto":
+            big = torch.cuda.get_device_properties(0).total_memory > 20e9
+            precision = "bf16" if torch.cuda.is_bf16_supported() and big else "4bit-fp16"
+        self.precision = precision
         self.cfg = GenerateConfig(pretrained_checkpoint=CHECKPOINTS[suite_name], task_suite_name=suite_name,
                                   use_l1_regression=True, use_diffusion=False, use_film=False,
                                   num_images_in_input=2, use_proprio=True, center_crop=True,
                                   num_open_loop_steps=8, lora_rank=32)
         set_seed_everywhere(self.cfg.seed)
-        self.model = get_model(self.cfg)
-        self.proprio_projector = get_proprio_projector(self.cfg, self.model.llm_dim, proprio_dim=8)
-        self.action_head = get_action_head(self.cfg, self.model.llm_dim)
+        if precision == "bf16":
+            self.model = get_model(self.cfg)
+            self.proprio_projector = get_proprio_projector(self.cfg, self.model.llm_dim, proprio_dim=8)
+            self.action_head = get_action_head(self.cfg, self.model.llm_dim)
+        else:
+            self.model, self.proprio_projector, self.action_head = self._load_4bit_fp16()
         self.processor = get_processor(self.cfg)
         check_unnorm_key(self.cfg, self.model)
         self.resize_size = get_image_resize_size(self.cfg)
         self.checkpoint = self.cfg.pretrained_checkpoint
-        print(f"OpenVLA-OFT: {self.checkpoint} | unnorm_key={self.cfg.unnorm_key} | "
+        print(f"OpenVLA-OFT: {self.checkpoint} | {precision} | unnorm_key={self.cfg.unnorm_key} | "
               f"видеопамять {torch.cuda.memory_allocated() / 1e9:.1f} ГБ")
 
-    def __call__(self, observation: dict, instruction: str) -> list:
-        from experiments.robot.robot_utils import get_action
+    def _load_4bit_fp16(self):
+        """get_vla + get_proprio_projector + get_action_head авторов, но 4 бита и float16."""
+        import torch
+        from experiments.robot.openvla_utils import DEVICE, _load_dataset_stats, load_component_state_dict
+        from huggingface_hub import HfApi, hf_hub_download
+        from prismatic.models.action_heads import L1RegressionActionHead
+        from prismatic.models.projectors import ProprioProjector
+        from prismatic.vla.constants import ACTION_DIM
+        from transformers import AutoModelForVision2Seq, BitsAndBytesConfig
 
-        return get_action(self.cfg, self.model, observation, instruction, processor=self.processor,
-                          action_head=self.action_head, proprio_projector=self.proprio_projector,
-                          noisy_action_projector=None, use_film=False)
+        ckpt = self.cfg.pretrained_checkpoint
+        vla = AutoModelForVision2Seq.from_pretrained(
+            ckpt, torch_dtype=torch.float16, low_cpu_mem_usage=True, trust_remote_code=True,
+            quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16))
+        vla.vision_backbone.set_num_images_in_input(self.cfg.num_images_in_input)
+        vla.eval()
+        _load_dataset_stats(vla, ckpt)
+
+        files = {f.rfilename for f in HfApi().model_info(ckpt).siblings}
+        def component(cls, prefix, **kw):
+            module = cls(**kw).to(torch.float16).to(DEVICE).eval()
+            name = next(f for f in files if f.startswith(prefix))
+            module.load_state_dict(load_component_state_dict(hf_hub_download(repo_id=ckpt, filename=name)))
+            return module
+
+        proprio = component(ProprioProjector, "proprio_projector", llm_dim=vla.llm_dim, proprio_dim=8)
+        head = component(L1RegressionActionHead, "action_head", input_dim=vla.llm_dim, hidden_dim=vla.llm_dim,
+                         action_dim=ACTION_DIM)
+        return vla, proprio, head
+
+    def __call__(self, observation: dict, instruction: str) -> list:
+        if self.precision == "bf16":
+            from experiments.robot.robot_utils import get_action
+
+            return get_action(self.cfg, self.model, observation, instruction, processor=self.processor,
+                              action_head=self.action_head, proprio_projector=self.proprio_projector,
+                              noisy_action_projector=None, use_film=False)
+        return self._action_fp16(observation, instruction)
+
+    def _action_fp16(self, obs: dict, task_label: str) -> list:
+        """get_vla_action авторов (openvla_utils.py) с float16 вместо bfloat16."""
+        import torch
+        from experiments.robot.openvla_utils import DEVICE, normalize_proprio, prepare_images_for_vla
+
+        with torch.inference_mode():
+            images = prepare_images_for_vla([obs["full_image"], obs["wrist_image"]], self.cfg)
+            prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+            inputs = self.processor(prompt, images[0]).to(DEVICE, dtype=torch.float16)
+            wrist = self.processor(prompt, images[1]).to(DEVICE, dtype=torch.float16)
+            inputs["pixel_values"] = torch.cat([inputs["pixel_values"], wrist["pixel_values"]], dim=1)
+            proprio = normalize_proprio(obs["state"], self.model.norm_stats[self.cfg.unnorm_key]["proprio"])
+            action, _ = self.model.predict_action(
+                **inputs, unnorm_key=self.cfg.unnorm_key, do_sample=False, proprio=proprio,
+                proprio_projector=self.proprio_projector, noisy_action_projector=None,
+                action_head=self.action_head, use_film=False)
+        return [action[i] for i in range(len(action))]
 
 
 # --------------------------------------------------------------------------------------
@@ -282,7 +346,7 @@ def evaluate(policy, suite_name, condition, task_ids, trials_per_task, out_dir, 
         "suite": suite_name, "condition": condition, "freeze_wrist": CONDITIONS[condition][0],
         "freeze_proprio": CONDITIONS[condition][1], "episodes": len(results), "success_rate": rate,
         "paper_success_rate_full": PAPER_SUCCESS.get(suite_name), "instruction": instruction, "goal_on": goal_on,
-        "checkpoint": policy.checkpoint, "seed": policy.cfg.seed,
+        "checkpoint": policy.checkpoint, "precision": getattr(policy, "precision", None), "seed": policy.cfg.seed,
         "mean_infer_s_per_query": float(np.mean([x["infer_s_per_query"] for x in results])),
         "mean_infer_s_per_step": float(np.mean([x["infer_s_per_step"] for x in results])),
         "mean_sim_s_per_step": float(np.mean([x["sim_s_per_step"] for x in results]))},
@@ -302,10 +366,12 @@ def main() -> None:
     p.add_argument("--no-video", action="store_true")
     p.add_argument("--instruction", default=None, help="своя команда роботу (по-английски)")
     p.add_argument("--goal-on", nargs=2, metavar=("A", "B"), default=None)
+    p.add_argument("--precision", choices=["auto", "bf16", "4bit-fp16"], default="auto",
+                   help="bf16 — как у авторов (L4/A100); 4bit-fp16 — для бесплатной T4")
     args = p.parse_args()
 
     setup(args.libero_root, args.oft_root)
-    policy = OFTPolicy(args.suite)  # модель грузится один раз на все условия
+    policy = OFTPolicy(args.suite, args.precision)  # модель грузится один раз на все условия
     for condition in args.conditions:
         evaluate(policy, args.suite, condition, args.tasks, args.trials, Path(args.out) / condition,
                  save_video=not args.no_video, instruction=args.instruction,

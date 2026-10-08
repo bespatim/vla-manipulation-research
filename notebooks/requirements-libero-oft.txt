@@ -2,6 +2,8 @@
 # Сам код OFT ставится отдельно: uv pip install -e openvla-oft — он тянет версии авторов
 # (torch 2.2.0, их форк transformers 4.40.1, tensorflow 2.15, dlimp и т.д.).
 # bddl==1.0.1 ставится с --no-deps (тянет лишнее, в т.ч. pytest/jupyter).
+# Сжатие модели до 4 бит для бесплатной T4 (версия под torch 2.2)
+bitsandbytes==0.43.1
 robosuite==1.4.1
 mujoco==3.2.7
 easydict
