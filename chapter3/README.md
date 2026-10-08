@@ -44,19 +44,22 @@
 
 ### 2.1. План
 
-1. **Готовая Octo в симуляторе.** Скачать `octo-small` и запустить её без дообучения в симуляторе
-   [SimplerEnv](https://github.com/simpler-env/SimplerEnv) на задачах робота WidowX — того же, что
-   в BridgeData V2 из главы 1 (4 задачи × 24 расстановки).
-2. **Дообучение.** По примеру авторов (`examples/02_finetune_new_observation_action.py`) дообучить
-   Octo-Small в симуляторе ALOHA дважды на одних и тех же демонстрациях: с показаниями суставов
-   и без них, — и сравнить успех. Ровно этого опыта не хватило в главе 2.
+Всё — в том же симуляторе LIBERO и на тех же 30 попытках LIBERO-Spatial, что в главах 1 и 2.
 
-### 2.2. Шаг 1: готовая Octo в SimplerEnv
+1. **Готовая Octo.** Скачать Octo-Small, уже дообученную на демонстрациях LIBERO
+   (`cyrusneary/octo-finetuned-libero`, выложена сторонним исследователем; входы — внешняя камера
+   и команда, как у OpenVLA в главе 1), и запустить её. Для сравнения: у авторов OpenVLA Octo,
+   дообученная на LIBERO-Spatial, набрала 78,9%.
+2. **Своё дообучение.** Дообучить Octo-Small на демонстрациях LIBERO-Spatial несколько раз с разными
+   входами (только внешняя камера; + камера на запястье; + датчики) и сравнить успех. Ровно этого
+   опыта не хватило в главе 2.
+
+### 2.2. Шаг 1: готовая Octo в LIBERO
 
 <!-- TODO: результаты -->
 
-Ноутбук: [`notebooks/octo_simpler_colab.ipynb`](../notebooks/octo_simpler_colab.ipynb),
-скрипт: [`scripts/simpler_octo_eval.py`](../scripts/simpler_octo_eval.py).
+Ноутбук: [`notebooks/libero_octo_colab.ipynb`](../notebooks/libero_octo_colab.ipynb),
+скрипт: [`scripts/libero_octo_eval.py`](../scripts/libero_octo_eval.py).
 
 ### 2.3. Шаг 2: дообучение с датчиками и без
 
