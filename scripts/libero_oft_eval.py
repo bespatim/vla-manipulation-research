@@ -10,11 +10,17 @@
 и тот же — тот, что был на первом шаге эпизода. Картинка/числа остаются правдоподобными, а информации
 о происходящем в них нет.
 
-Условия:
+Условия — «заморозка» (вход «завис» на первом кадре эпизода):
   full        — все входы модели живые
   no_proprio  — состояние робота заморожено           («без датчиков»)
   no_wrist    — камера запястья заморожена (только oft)
   image_only  — заморожены и запястье, и состояние (только oft; «1 фото», как вход OpenVLA из главы 1)
+Условия — «отключение» штатными флагами авторов num_images_in_input / use_proprio (входа нет совсем):
+  drop_proprio — без токена состояния робота
+  drop_wrist   — без 256 токенов камеры запястья (только oft)
+  drop_both    — только внешняя камера и текст (только oft)
+Обе проверки касаются модели, обученной со всеми входами: при обучении OFT входы никогда не пропадают
+(в коде авторов нет случайного отключения входов), поэтому ни одна из этих ситуаций ей не знакома.
 
 Цикл эпизода, подготовка кадров и обработка действий — функции из репозитория авторов
 (moojink/openvla-oft, experiments/robot/libero/run_libero_eval.py). Дополнительно на каждом шаге
@@ -51,11 +57,17 @@ MODELS = {"oft": 2, "oft_no_wrist": 1}   # модель → число карт�
 # Табл. I статьи OpenVLA-OFT (500 попыток на набор, 2 камеры + состояние робота)
 PAPER_SUCCESS = {"libero_spatial": 97.6, "libero_object": 98.4, "libero_goal": 97.9, "libero_10": 94.5}
 CONDITIONS = {
-    #             заморозить запястье, заморозить состояние
-    "full": (False, False),
-    "no_proprio": (False, True),
-    "no_wrist": (True, False),
-    "image_only": (True, True),
+    # «Заморозка» — вход подаётся, но всё время с первого шага эпизода («датчик завис»).
+    # «Отключение» — вход убирается совсем штатными флагами авторов num_images_in_input / use_proprio:
+    # модель не получает 256 токенов камеры запястья или токен состояния («датчик отсоединён»).
+    #               заморозить запястье, заморозить состояние, отключить запястье, отключить состояние
+    "full":         (False, False, False, False),
+    "no_proprio":   (False, True, False, False),
+    "no_wrist":     (True, False, False, False),
+    "image_only":   (True, True, False, False),
+    "drop_proprio": (False, False, False, True),
+    "drop_wrist":   (False, False, True, False),
+    "drop_both":    (False, False, True, True),
 }
 
 
@@ -232,35 +244,45 @@ class OFTPolicy:
                          action_dim=ACTION_DIM)
         return vla, proprio, head
 
-    def __call__(self, observation: dict, instruction: str) -> list:
+    def __call__(self, observation: dict, instruction: str, drop_wrist: bool = False,
+                 drop_proprio: bool = False) -> list:
+        """drop_wrist / drop_proprio — убрать вход штатными флагами авторов (а не заморозить)."""
+        n_images = 1 if drop_wrist else self.cfg.num_images_in_input
+        use_proprio = not drop_proprio
+        self.model.vision_backbone.set_num_images_in_input(n_images)  # число токенов картинок
         if self.precision == "bf16":
+            from dataclasses import replace
+
             from experiments.robot.robot_utils import get_action
 
+            cfg = replace(self.cfg, num_images_in_input=n_images, use_proprio=use_proprio)
             obs = dict(observation)
-            if self.cfg.num_images_in_input == 1:
+            if n_images == 1:
                 obs.pop("wrist_image")  # get_vla_action берёт все ключи с «wrist» как доп. картинки
-            return get_action(self.cfg, self.model, obs, instruction, processor=self.processor,
-                              action_head=self.action_head, proprio_projector=self.proprio_projector,
+            return get_action(cfg, self.model, obs, instruction, processor=self.processor,
+                              action_head=self.action_head,
+                              proprio_projector=self.proprio_projector if use_proprio else None,
                               noisy_action_projector=None, use_film=False)
-        return self._action_fp16(observation, instruction)
+        return self._action_fp16(observation, instruction, n_images, use_proprio)
 
-    def _action_fp16(self, obs: dict, task_label: str) -> list:
+    def _action_fp16(self, obs: dict, task_label: str, n_images: int, use_proprio: bool) -> list:
         """get_vla_action авторов (openvla_utils.py) с float16 вместо bfloat16."""
         import torch
         from experiments.robot.openvla_utils import DEVICE, normalize_proprio, prepare_images_for_vla
 
         with torch.inference_mode():
-            raw_images = [obs["full_image"]] + ([obs["wrist_image"]] if self.cfg.num_images_in_input > 1 else [])
+            raw_images = [obs["full_image"]] + ([obs["wrist_image"]] if n_images > 1 else [])
             images = prepare_images_for_vla(raw_images, self.cfg)
             prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
             inputs = self.processor(prompt, images[0]).to(DEVICE, dtype=torch.float16)
             if len(images) > 1:
                 wrist = self.processor(prompt, images[1]).to(DEVICE, dtype=torch.float16)
                 inputs["pixel_values"] = torch.cat([inputs["pixel_values"], wrist["pixel_values"]], dim=1)
-            proprio = normalize_proprio(obs["state"], self.model.norm_stats[self.cfg.unnorm_key]["proprio"])
+            proprio = (normalize_proprio(obs["state"], self.model.norm_stats[self.cfg.unnorm_key]["proprio"])
+                       if use_proprio else None)
             action, _ = self.model.predict_action(
                 **inputs, unnorm_key=self.cfg.unnorm_key, do_sample=False, proprio=proprio,
-                proprio_projector=self.proprio_projector, noisy_action_projector=None,
+                proprio_projector=self.proprio_projector if use_proprio else None, noisy_action_projector=None,
                 action_head=self.action_head, use_film=False)
         return [action[i] for i in range(len(action))]
 
@@ -276,7 +298,7 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects, condit
     from experiments.robot.libero.run_libero_eval import process_action
     from experiments.robot.openvla_utils import resize_image_for_policy
 
-    freeze_wrist, freeze_proprio = CONDITIONS[condition]
+    freeze_wrist, freeze_proprio, drop_wrist, drop_proprio = CONDITIONS[condition]
     env.reset()
     obs = env.set_init_state(init_state)
     probe = ContactProbe(env, objects)
@@ -304,7 +326,7 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects, condit
                 "state": frozen_state.copy() if freeze_proprio else state,
             }
             t0 = time.time()
-            queue.extend(policy(observation, instruction))
+            queue.extend(policy(observation, instruction, drop_wrist=drop_wrist, drop_proprio=drop_proprio))
             infer_s = time.time() - t0
             infer_total += infer_s
             n_queries += 1
@@ -387,8 +409,9 @@ def evaluate(policy, suite_name, condition, task_ids, trials_per_task, out_dir, 
     print(f"\n{condition}: успех {rate:.1f}% на {len(results)} эпизодах"
           + (f" | у авторов (full): {PAPER_SUCCESS[suite_name]}%" if instruction is None else ""))
     (out / "meta.json").write_text(json.dumps({
-        "suite": suite_name, "condition": condition, "freeze_wrist": CONDITIONS[condition][0],
-        "freeze_proprio": CONDITIONS[condition][1], "episodes": len(results), "success_rate": rate,
+        "suite": suite_name, "condition": condition,
+        **dict(zip(("freeze_wrist", "freeze_proprio", "drop_wrist", "drop_proprio"), CONDITIONS[condition])),
+        "episodes": len(results), "success_rate": rate,
         "paper_success_rate_full": PAPER_SUCCESS.get(suite_name), "instruction": instruction, "goal_on": goal_on,
         "model": getattr(policy, "model_name", None), "checkpoint": policy.checkpoint,
         "images_in_input": policy.cfg.num_images_in_input if hasattr(policy.cfg, "num_images_in_input") else None,
@@ -423,7 +446,7 @@ def main() -> None:
     os.chdir(args.oft_root)  # код авторов ищет свои файлы модели относительно корня репозитория
     policy = OFTPolicy(args.suite, args.precision, args.model)  # модель грузится один раз на все условия
     for condition in args.conditions:
-        if MODELS[args.model] == 1 and CONDITIONS[condition][0]:
+        if MODELS[args.model] == 1 and (CONDITIONS[condition][0] or CONDITIONS[condition][2]):
             print(f"Пропускаю {condition}: у модели {args.model} нет камеры на запястье")
             continue
         evaluate(policy, args.suite, condition, args.tasks, args.trials, out_root / condition,
