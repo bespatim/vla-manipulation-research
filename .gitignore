@@ -25,3 +25,7 @@ outputs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Видео попыток Octo (глава 3) — в главе есть GIF; таблицы по шагам храним
+results/octo_libero_spatial/**/*.mp4
+results/octo_finetune_libero_spatial/**/*.mp4
