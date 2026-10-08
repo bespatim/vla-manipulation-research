@@ -38,7 +38,8 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--data-dir", required=True, help="папка, внутри которой лежит libero_spatial_no_noops/1.0.0")
     p.add_argument("--dataset", default="libero_spatial_no_noops")
-    p.add_argument("--pretrained", default="hf://rail-berkeley/octo-small-1.5")
+    p.add_argument("--pretrained", default="hf://rail-berkeley/octo-small-1.5",
+                   help="откуда начинать: hf://... или octo_libero — Octo-Small, уже дообученная на LIBERO (шаг 1)")
     p.add_argument("--wrist", action="store_true", help="добавить камеру на запястье")
     p.add_argument("--proprio", action="store_true", help="добавить датчики (state)")
     p.add_argument("--steps", type=int, default=5000)
@@ -70,7 +71,15 @@ def main() -> None:
     initialize_compilation_cache()
     tf.config.set_visible_devices([], "GPU")  # TensorFlow только читает данные
 
-    pretrained = OctoModel.load_pretrained(args.pretrained)
+    if args.pretrained == "octo_libero":  # та же модель, что в шаге 1 (60 000 шагов на LIBERO, только камера)
+        from huggingface_hub import snapshot_download
+
+        repo = "cyrusneary/octo-finetuned-libero"
+        sub = "2025-06-20_octo_small_1p5_libero_finetune/octo_finetune/experiment_20250620_175739"
+        local = snapshot_download(repo_id=repo, allow_patterns=[f"{sub}/60000/*", f"{sub}/*.json", f"{sub}/*.msgpack"])
+        pretrained = OctoModel.load_pretrained(os.path.join(local, sub), step=60000)
+    else:
+        pretrained = OctoModel.load_pretrained(args.pretrained)
     text_processor = pretrained.text_processor
 
     image_keys = {"primary": "image", **({"wrist": "wrist_image"} if args.wrist else {})}
