@@ -4,6 +4,11 @@
 # bddl==1.0.1 ставится с --no-deps (тянет лишнее, в т.ч. pytest/jupyter).
 # Сжатие модели до 4 бит для бесплатной T4 (версия под torch 2.2)
 bitsandbytes==0.43.1
+# tensorflow-metadata >= 1.17 собрана под protobuf 5 и падает с protobuf 4.x, который требует
+# tensorflow 2.15 («cannot import name 'runtime_version' from 'google.protobuf'»)
+tensorflow-metadata==1.14.0
+# код OFT импортирует wandb (нам он не нужен); новые версии не работают со старым protobuf
+wandb==0.17.0
 robosuite==1.4.1
 mujoco==3.2.7
 easydict
