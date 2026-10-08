@@ -1,0 +1,17 @@
+{
+  "suite": "libero_spatial",
+  "condition": "full",
+  "freeze_wrist": false,
+  "freeze_proprio": false,
+  "episodes": 2,
+  "success_rate": 100.0,
+  "paper_success_rate_full": 97.6,
+  "instruction": null,
+  "goal_on": null,
+  "checkpoint": "moojink/openvla-7b-oft-finetuned-libero-spatial",
+  "precision": "4bit-fp16",
+  "seed": 7,
+  "mean_infer_s_per_query": 0.8381061840367008,
+  "mean_infer_s_per_step": 0.11235384669804835,
+  "mean_sim_s_per_step": 0.04036173421849521
+}
