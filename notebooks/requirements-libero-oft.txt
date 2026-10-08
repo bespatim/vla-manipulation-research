@@ -1,0 +1,13 @@
+# Симулятор LIBERO для окружения OpenVLA-OFT (Python 3.10).
+# Сам код OFT ставится отдельно: uv pip install -e openvla-oft — он тянет версии авторов
+# (torch 2.2.0, их форк transformers 4.40.1, tensorflow 2.15, dlimp и т.д.).
+# bddl==1.0.1 ставится с --no-deps (тянет лишнее, в т.ч. pytest/jupyter).
+robosuite==1.4.1
+mujoco==3.2.7
+easydict
+gym
+cloudpickle
+future
+networkx
+pyyaml
+imageio[ffmpeg]
