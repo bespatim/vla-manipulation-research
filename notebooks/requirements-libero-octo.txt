@@ -13,6 +13,8 @@ tensorflow==2.15.0
 keras==2.15.0
 tensorflow_probability==0.23.0
 tensorflow_datasets==4.9.2
+# новые tensorflow-metadata требуют protobuf новее, чем у TensorFlow 2.15 (ImportError runtime_version)
+tensorflow-metadata==1.14.0
 dlimp @ git+https://github.com/kvablack/dlimp@d08da3852c149548aaa8551186d619d87375df08
 transformers==4.34.1
 ml_collections
