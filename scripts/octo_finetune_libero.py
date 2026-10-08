@@ -90,7 +90,7 @@ def main() -> None:
             action_normalization_mask=[True] * 6 + [False],  # захват (0/1) не нормализуем
             standardize_fn=ModuleSpec.create(libero_transform),
         ),
-        traj_transform_kwargs=dict(window_size=1, action_horizon=4,
+        traj_transform_kwargs=dict(window_size=1, action_horizon=4, goal_relabeling_strategy=None,
                                    task_augment_strategy="delete_task_conditioning",
                                    task_augment_kwargs=dict(keep_image_prob=0.0)),  # задача — только текст
         frame_transform_kwargs=dict(resize_size=resize,
