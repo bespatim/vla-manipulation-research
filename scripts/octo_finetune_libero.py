@@ -15,7 +15,7 @@ OpenVLA-OFT (`openvla/modified_libero_rlds`, папка libero_spatial_no_noops)
 
 Пример:
     python scripts/octo_finetune_libero.py --data-dir /content/libero_rlds --wrist --proprio \
-        --steps 5000 --batch-size 64 --save-dir /content/ckpt/octo_wrist_proprio
+        --steps 5000 --batch-size 32 --save-dir /content/ckpt/octo_wrist_proprio
 """
 
 import argparse
@@ -42,7 +42,7 @@ def main() -> None:
     p.add_argument("--wrist", action="store_true", help="добавить камеру на запястье")
     p.add_argument("--proprio", action="store_true", help="добавить датчики (state)")
     p.add_argument("--steps", type=int, default=5000)
-    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--warmup", type=int, default=500)
     p.add_argument("--shuffle", type=int, default=5000, help="буфер перемешивания кадров (ест оперативную память)")
@@ -52,7 +52,9 @@ def main() -> None:
     args = p.parse_args()
 
     os.environ["MPLBACKEND"] = "Agg"
-    os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+    # Симулятор при обучении не нужен: JAX сразу занимает 90% видеопамяти одним куском. При выделении
+    # по требованию пачка 32 со всеми входами не помещалась в T4 (нужно 7,6 ГБ одним куском).
+    os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.9")
     import jax
     import numpy as np
     import optax
