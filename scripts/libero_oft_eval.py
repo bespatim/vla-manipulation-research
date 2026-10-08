@@ -53,7 +53,15 @@ CHECKPOINTS = {
 # Модель без камеры на запястье: репозиторий, подпапка = набор задач; обучена на тех же данных
 # (432 демонстрации libero_spatial_no_noops), LoRA r=32, голова L1 + проектор состояния робота
 NO_WRIST_REPO = "Sylvest/openvla-7b-oft-finetuned-libero-without-wrist"
-MODELS = {"oft": 2, "oft_no_wrist": 1}   # модель → число картинок на входе
+# Модель SimpleVLA-RL (arXiv 2509.09674): OpenVLA-OFT, дообученная на всех демонстрациях, но только
+# на внешней камере, без камеры на запястье и без датчиков; действия — дискретные токены (параллельная
+# генерация, пачка из 8), отдельной головы L1 нет. Их статья: 95,3% на LIBERO-Spatial.
+ONE_CAM_REPOS = {"libero_spatial": "Haozhan72/Openvla-oft-SFT-libero-spatial-trajall",
+                 "libero_object": "Haozhan72/Openvla-oft-SFT-libero-object-trajall",
+                 "libero_goal": "Haozhan72/Openvla-oft-SFT-libero-goal-trajall",
+                 "libero_10": "Haozhan72/Openvla-oft-SFT-libero10-trajall"}
+# модель → (картинок на входе, датчики, голова L1 для непрерывных действий)
+MODELS = {"oft": (2, True, True), "oft_no_wrist": (1, True, True), "oft_1cam": (1, False, False)}
 # Табл. I статьи OpenVLA-OFT (500 попыток на набор, 2 камеры + состояние робота)
 PAPER_SUCCESS = {"libero_spatial": 97.6, "libero_object": 98.4, "libero_goal": 97.9, "libero_10": 94.5}
 CONDITIONS = {
@@ -165,37 +173,55 @@ class OFTPolicy:
     precision="auto"      — bf16, если видеокарта позволяет, иначе 4bit-fp16.
     """
 
-    def __init__(self, suite_name: str, precision: str = "auto", model: str = "oft"):
+    def __init__(self, suite_name: str, precision: str = "auto", model: str = "oft", stats: str = "checkpoint"):
+        """stats="oft_full" — нормализация действий по статистике всех демонстраций набора (файл модели
+        авторов OFT; данные те же) вместо файла чекпойнта. Нужна для oft_1cam: в чекпойнте trajall лежит
+        статистика по 10 демонстрациям, скопированная из версии traj1."""
+        import json
+
         import torch
         from experiments.robot.libero.run_libero_eval import GenerateConfig, check_unnorm_key
         from experiments.robot.openvla_utils import get_action_head, get_processor, get_proprio_projector
         from experiments.robot.robot_utils import get_image_resize_size, get_model, set_seed_everywhere
+        from huggingface_hub import hf_hub_download
 
         if precision == "auto":
             big = torch.cuda.get_device_properties(0).total_memory > 20e9
             precision = "bf16" if torch.cuda.is_bf16_supported() and big else "4bit-fp16"
-        self.precision, self.model_name = precision, model
-        ckpt = CHECKPOINTS[suite_name] if model == "oft" else download_no_wrist(suite_name)
+        self.precision, self.model_name, self.stats = precision, model, stats
+        n_images, use_proprio, use_head = MODELS[model]
+        if model == "oft":
+            ckpt = CHECKPOINTS[suite_name]
+        elif model == "oft_no_wrist":
+            ckpt = download_no_wrist(suite_name)
+        else:
+            ckpt = ONE_CAM_REPOS[suite_name]
         self.cfg = GenerateConfig(pretrained_checkpoint=ckpt, task_suite_name=suite_name,
-                                  use_l1_regression=True, use_diffusion=False, use_film=False,
-                                  num_images_in_input=MODELS[model], use_proprio=True, center_crop=True,
+                                  use_l1_regression=use_head, use_diffusion=False, use_film=False,
+                                  num_images_in_input=n_images, use_proprio=use_proprio, center_crop=True,
                                   num_open_loop_steps=8, lora_rank=32)
         set_seed_everywhere(self.cfg.seed)
         if precision == "bf16":
             self.model = get_model(self.cfg)
-            self.proprio_projector = get_proprio_projector(self.cfg, self.model.llm_dim, proprio_dim=8)
-            self.action_head = get_action_head(self.cfg, self.model.llm_dim)
+            self.proprio_projector = (get_proprio_projector(self.cfg, self.model.llm_dim, proprio_dim=8)
+                                      if use_proprio else None)
+            self.action_head = get_action_head(self.cfg, self.model.llm_dim) if use_head else None
         else:
-            self.model, self.proprio_projector, self.action_head = self._load_4bit_fp16()
+            self.model, self.proprio_projector, self.action_head = self._load_4bit_fp16(use_proprio, use_head)
+        if stats == "oft_full":
+            path = hf_hub_download(repo_id=CHECKPOINTS[suite_name], filename="dataset_statistics.json")
+            with open(path) as f:
+                self.model.norm_stats.update(json.load(f))
         self.processor = get_processor(self.cfg)
         check_unnorm_key(self.cfg, self.model)
         self.resize_size = get_image_resize_size(self.cfg)
         self.checkpoint = NO_WRIST_REPO if model == "oft_no_wrist" else ckpt
-        print(f"OpenVLA-OFT ({model}): {self.checkpoint} | картинок на входе {self.cfg.num_images_in_input} | "
-              f"{precision} | unnorm_key={self.cfg.unnorm_key} | "
-              f"видеопамять {torch.cuda.memory_allocated() / 1e9:.1f} ГБ")
+        n_demo = self.model.norm_stats[self.cfg.unnorm_key].get("num_trajectories")
+        print(f"OpenVLA-OFT ({model}): {self.checkpoint} | картинок на входе {n_images} | датчики {use_proprio} | "
+              f"голова L1 {use_head} | {precision} | unnorm_key={self.cfg.unnorm_key} (статистика: {stats}, "
+              f"{n_demo} демонстраций) | видеопамять {torch.cuda.memory_allocated() / 1e9:.1f} ГБ")
 
-    def _load_4bit_fp16(self):
+    def _load_4bit_fp16(self, use_proprio: bool = True, use_head: bool = True):
         """get_vla + get_proprio_projector + get_action_head авторов, но 4 бита и float16."""
         import torch
         from experiments.robot.openvla_utils import (DEVICE, _load_dataset_stats, check_model_logic_mismatch,
@@ -239,16 +265,17 @@ class OFTPolicy:
             module.load_state_dict(load_component_state_dict(locate(prefix)))
             return module
 
-        proprio = component(ProprioProjector, "proprio_projector", llm_dim=vla.llm_dim, proprio_dim=8)
-        head = component(L1RegressionActionHead, "action_head", input_dim=vla.llm_dim, hidden_dim=vla.llm_dim,
-                         action_dim=ACTION_DIM)
+        proprio = (component(ProprioProjector, "proprio_projector", llm_dim=vla.llm_dim, proprio_dim=8)
+                   if use_proprio else None)
+        head = (component(L1RegressionActionHead, "action_head", input_dim=vla.llm_dim, hidden_dim=vla.llm_dim,
+                          action_dim=ACTION_DIM) if use_head else None)
         return vla, proprio, head
 
     def __call__(self, observation: dict, instruction: str, drop_wrist: bool = False,
                  drop_proprio: bool = False) -> list:
         """drop_wrist / drop_proprio — убрать вход штатными флагами авторов (а не заморозить)."""
         n_images = 1 if drop_wrist else self.cfg.num_images_in_input
-        use_proprio = not drop_proprio
+        use_proprio = self.cfg.use_proprio and not drop_proprio
         self.model.vision_backbone.set_num_images_in_input(n_images)  # число токенов картинок
         if self.precision == "bf16":
             from dataclasses import replace
@@ -438,16 +465,21 @@ def main() -> None:
     p.add_argument("--precision", choices=["auto", "bf16", "4bit-fp16"], default="auto",
                    help="bf16 — как у авторов (L4/A100); 4bit-fp16 — для бесплатной T4")
     p.add_argument("--model", choices=list(MODELS), default="oft",
-                   help="oft — модель авторов (2 камеры); oft_no_wrist — обучена без камеры на запястье")
+                   help="oft — модель авторов (2 камеры + датчики); oft_no_wrist — обучена без камеры на запястье; "
+                        "oft_1cam — SimpleVLA-RL: 1 камера, без датчиков, дискретные действия")
+    p.add_argument("--stats", choices=["checkpoint", "oft_full"], default="checkpoint",
+                   help="статистика для перевода действий: из чекпойнта или по всем демонстрациям (файл OFT)")
     args = p.parse_args()
 
     out_root = Path(args.out).resolve()
     setup(args.libero_root, args.oft_root)
     os.chdir(args.oft_root)  # код авторов ищет свои файлы модели относительно корня репозитория
-    policy = OFTPolicy(args.suite, args.precision, args.model)  # модель грузится один раз на все условия
+    policy = OFTPolicy(args.suite, args.precision, args.model, args.stats)  # модель грузится один раз
+    n_images, has_proprio, _ = MODELS[args.model]
     for condition in args.conditions:
-        if MODELS[args.model] == 1 and (CONDITIONS[condition][0] or CONDITIONS[condition][2]):
-            print(f"Пропускаю {condition}: у модели {args.model} нет камеры на запястье")
+        freeze_w, freeze_p, drop_w, drop_p = CONDITIONS[condition]
+        if (n_images == 1 and (freeze_w or drop_w)) or (not has_proprio and (freeze_p or drop_p)):
+            print(f"Пропускаю {condition}: у модели {args.model} нет такого входа")
             continue
         evaluate(policy, args.suite, condition, args.tasks, args.trials, out_root / condition,
                  save_video=not args.no_video, instruction=args.instruction,
