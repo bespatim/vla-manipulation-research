@@ -80,6 +80,23 @@ def wrist(obs):
     return np.ascontiguousarray(obs["robot0_eye_in_hand_image"][::-1, ::-1])
 
 
+def resize_like_octo(image, size):
+    """Сжатие кадра, как в загрузчике данных Octo (tf.image.resize, lanczos3, со сглаживанием)."""
+    import tensorflow as tf
+
+    out = tf.image.resize(image, (size, size), method="lanczos3", antialias=True)
+    return tf.cast(tf.clip_by_value(tf.round(out), 0, 255), tf.uint8).numpy()
+
+
+def robot_state(obs):
+    """Датчики, как в демонстрациях LIBERO (`state`): положение захвата, его поворот (ось-угол), пальцы."""
+    q = np.asarray(obs["robot0_eef_quat"], dtype=np.float64)  # x, y, z, w
+    w = np.clip(q[3], -1.0, 1.0)
+    den = np.sqrt(1.0 - w * w)
+    axis_angle = np.zeros(3) if np.isclose(den, 0.0) else q[:3] * 2.0 * np.arccos(w) / den
+    return np.concatenate([obs["robot0_eef_pos"], axis_angle, obs["robot0_gripper_qpos"]])
+
+
 def to_env_action(a):
     """Захват: модель 1 = открыт, 0 = закрыт → симулятор −1 = открыт, +1 = закрыт."""
     a = np.asarray(a, dtype=np.float64).copy()
@@ -156,10 +173,13 @@ class OctoPolicy:
         if "action" not in stats:  # чекпойнт обучен на нескольких наборах — статистика по каждому
             stats = stats[STATS_KEY[suite_name]]
         self.action_stats = stats["action"]
+        self.proprio_stats = stats.get("proprio")
         head = self.model.config["model"]["heads"]["action"]["kwargs"]
         self.horizon = head.get("action_horizon", 1)
         self.exec_steps = exec_steps or self.horizon
         self.inputs = sorted(self.model.config["model"]["observation_tokenizers"])
+        # У octo_libero токенизатор запястья остался от Octo-Small 1.5, но на запястье её не обучали
+        self.used = [k for k in self.inputs if not (model != "local" and k == "wrist")]
         self._jax = jax
         self._rng = jax.random.PRNGKey(seed)
         self._task_cache = {}
@@ -168,10 +188,12 @@ class OctoPolicy:
         if instruction not in self._task_cache:
             self._task_cache[instruction] = self.model.create_tasks(texts=[instruction])
         obs = {"image_primary": image[None, None], "timestep_pad_mask": np.array([[True]])}
-        if wrist_image is not None:
-            obs["image_wrist"] = wrist_image[None, None]
-        if proprio is not None:
-            obs["proprio"] = proprio[None, None].astype(np.float32)
+        if wrist_image is not None:  # при обучении кадры запястья сжимались до 128×128
+            obs["image_wrist"] = resize_like_octo(wrist_image, 128)[None, None]
+        if proprio is not None:  # при обучении датчики нормализовались по статистике демонстраций
+            s = self.proprio_stats
+            obs["proprio"] = ((proprio - np.asarray(s["mean"])) / (np.asarray(s["std"]) + 1e-8))[None, None]
+            obs["proprio"] = obs["proprio"].astype(np.float32)
         self._rng, key = self._jax.random.split(self._rng)
         actions = self.model.sample_actions(obs, self._task_cache[instruction],
                                             unnormalization_statistics=self.action_stats, rng=key)
@@ -182,7 +204,7 @@ class OctoPolicy:
 # Эпизод
 # --------------------------------------------------------------------------------------
 def run_episode(policy, env, instruction, init_state, max_steps, objects,
-                video_path=None, log_path=None, goal_on=None, use_env_goal=True, use_wrist=False):
+                video_path=None, log_path=None, goal_on=None, use_env_goal=True):
     import imageio
 
     env.reset()
@@ -201,7 +223,9 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects,
         infer_s = 0.0
         if query:
             t0 = time.time()
-            queue.extend(policy(agentview(obs), instruction, wrist_image=wrist(obs) if use_wrist else None))
+            queue.extend(policy(agentview(obs), instruction,
+                                wrist_image=wrist(obs) if "wrist" in policy.used else None,
+                                proprio=robot_state(obs) if "proprio" in policy.used else None))
             infer_s = time.time() - t0
             infer_total += infer_s
             n_queries += 1
@@ -253,7 +277,6 @@ def evaluate(policy, suite_name, task_ids, trials_per_task, out_dir, save_video=
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     suite = benchmark.get_benchmark_dict()[suite_name]()
-    use_wrist = "wrist" in policy.inputs and policy.model_name == "local"
     results = []
     for task_id in task_ids if task_ids is not None else range(suite.n_tasks):
         task = suite.get_task(task_id)
@@ -267,7 +290,7 @@ def evaluate(policy, suite_name, task_ids, trials_per_task, out_dir, save_video=
             t0 = time.time()
             r = run_episode(policy, env, command, init_states[trial], MAX_STEPS[suite_name], objects,
                             video_path=out / f"{name}.mp4" if save_video else None, log_path=out / f"{name}.csv",
-                            goal_on=goal_on, use_env_goal=instruction is None, use_wrist=use_wrist)
+                            goal_on=goal_on, use_env_goal=instruction is None)
             r.update({"suite": suite_name, "model": policy.model_name, "task_id": task_id, "trial": trial,
                       "instruction": command, "objects": " ".join(objects), "wall_s": round(time.time() - t0, 1)})
             results.append(r)
@@ -286,7 +309,7 @@ def evaluate(policy, suite_name, task_ids, trials_per_task, out_dir, save_video=
           + (f" | Octo у авторов OpenVLA: {paper}%" if paper and instruction is None else ""))
     (out / "meta.json").write_text(json.dumps({
         "suite": suite_name, "model": policy.model_name, "checkpoint": policy.checkpoint,
-        "inputs": policy.inputs, "action_horizon": policy.horizon, "exec_steps": policy.exec_steps,
+        "inputs": policy.used, "action_horizon": policy.horizon, "exec_steps": policy.exec_steps,
         "episodes": len(results), "success_rate": rate, "paper_octo_success_rate": paper,
         "instruction": instruction, "goal_on": goal_on,
         "mean_infer_s_per_query": float(np.mean([x["infer_s_per_query"] for x in results])),
@@ -316,7 +339,7 @@ def main() -> None:
     out = Path(args.out).resolve()
     setup(args.libero_root)
     policy = OctoPolicy(args.suite, args.model, args.checkpoint, args.step, args.exec_steps)
-    print(f"Модель: {policy.checkpoint} | входы: {policy.inputs} | пачка {policy.horizon}, "
+    print(f"Модель: {policy.checkpoint} | входы: {policy.used} | пачка {policy.horizon}, "
           f"выполняем {policy.exec_steps}", flush=True)
     evaluate(policy, args.suite, args.tasks, args.trials, out, save_video=not args.no_video,
              instruction=args.instruction, goal_on=tuple(args.goal_on) if args.goal_on else None)
