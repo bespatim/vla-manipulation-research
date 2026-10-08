@@ -52,9 +52,10 @@ def main() -> None:
     args = p.parse_args()
 
     os.environ["MPLBACKEND"] = "Agg"
-    # Симулятор при обучении не нужен: JAX сразу занимает 90% видеопамяти одним куском. При выделении
-    # по требованию пачка 32 со всеми входами не помещалась в T4 (нужно 7,6 ГБ одним куском).
-    os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.9")
+    # Симулятор при обучении не нужен: JAX сразу занимает 75% видеопамяти одним куском (как по умолчанию).
+    # При выделении по требованию пачка 32 со всеми входами не помещалась в T4 (нужно 7,6 ГБ одним куском),
+    # а при 90% не хватало места cuDNN (CUDNN_STATUS_EXECUTION_FAILED)
+    os.environ.pop("XLA_PYTHON_CLIENT_PREALLOCATE", None)
     import jax
     import numpy as np
     import optax
