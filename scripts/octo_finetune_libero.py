@@ -68,6 +68,7 @@ def main() -> None:
     tf.config.set_visible_devices([], "GPU")  # TensorFlow только читает данные
 
     pretrained = OctoModel.load_pretrained(args.pretrained)
+    text_processor = pretrained.text_processor
 
     image_keys = {"primary": "image", **({"wrist": "wrist_image"} if args.wrist else {})}
     resize = {"primary": (256, 256), **({"wrist": (128, 128)} if args.wrist else {})}
@@ -100,7 +101,7 @@ def main() -> None:
     it = dataset.repeat().unbatch().shuffle(args.shuffle).batch(args.batch_size).iterator()
 
     def process_batch(batch):
-        batch = process_text(batch, pretrained.text_processor)
+        batch = process_text(batch, text_processor)
         del batch["dataset_name"]
         return batch
 
@@ -116,7 +117,7 @@ def main() -> None:
         config["model"]["observation_tokenizers"]["proprio"] = ModuleSpec.create(
             LowdimObsTokenizer, n_bins=256, bin_type="normal", low=-2.0, high=2.0, obs_keys=["proprio"])
 
-    model = OctoModel.from_config(config, example_batch, pretrained.text_processor, verbose=True,
+    model = OctoModel.from_config(config, example_batch, text_processor, verbose=True,
                                   dataset_statistics=dataset.dataset_statistics)
     model = model.replace(params=merge_params(model.params, pretrained.params))
     del pretrained
