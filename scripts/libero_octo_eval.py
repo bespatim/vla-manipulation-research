@@ -212,6 +212,7 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects,
     probe = ContactProbe(env, objects)
     goal_check = make_goal_check(env, goal_on)
     queue = deque()
+    frozen_state = None  # для --freeze-proprio: показания датчиков с первого запроса («датчик завис»)
     rows, frames, success, t, step = [], [], False, 0, 0
     infer_total, sim_total, n_queries = 0.0, 0.0, 0
     while t < max_steps + NUM_STEPS_WAIT:
@@ -222,10 +223,15 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects,
         query = len(queue) == 0
         infer_s = 0.0
         if query:
+            state = robot_state(obs)
+            if frozen_state is None:
+                frozen_state = state.copy()
+            if getattr(policy, "freeze_proprio", False):
+                state = frozen_state.copy()
             t0 = time.time()
             queue.extend(policy(agentview(obs), instruction,
                                 wrist_image=wrist(obs) if "wrist" in policy.used else None,
-                                proprio=robot_state(obs) if "proprio" in policy.used else None))
+                                proprio=state if "proprio" in policy.used else None))
             infer_s = time.time() - t0
             infer_total += infer_s
             n_queries += 1
@@ -312,6 +318,7 @@ def evaluate(policy, suite_name, task_ids, trials_per_task, out_dir, save_video=
         "inputs": policy.used, "action_horizon": policy.horizon, "exec_steps": policy.exec_steps,
         "episodes": len(results), "success_rate": rate, "paper_octo_success_rate": paper,
         "instruction": instruction, "goal_on": goal_on,
+        "freeze_proprio": getattr(policy, "freeze_proprio", False),
         "mean_infer_s_per_query": float(np.mean([x["infer_s_per_query"] for x in results])),
         "mean_infer_s_per_step": float(np.mean([x["infer_s_per_step"] for x in results])),
         "mean_sim_s_per_step": float(np.mean([x["sim_s_per_step"] for x in results]))},
@@ -334,11 +341,14 @@ def main() -> None:
     p.add_argument("--no-video", action="store_true")
     p.add_argument("--instruction", default=None, help="своя команда роботу (по-английски)")
     p.add_argument("--goal-on", nargs=2, metavar=("A", "B"), default=None)
+    p.add_argument("--freeze-proprio", action="store_true",
+                   help="подавать датчики с первого шага попытки (проверка, пользуется ли ими модель)")
     args = p.parse_args()
 
     out = Path(args.out).resolve()
     setup(args.libero_root)
     policy = OctoPolicy(args.suite, args.model, args.checkpoint, args.step, args.exec_steps)
+    policy.freeze_proprio = args.freeze_proprio
     print(f"Модель: {policy.checkpoint} | входы: {policy.used} | пачка {policy.horizon}, "
           f"выполняем {policy.exec_steps}", flush=True)
     evaluate(policy, args.suite, args.tasks, args.trials, out, save_video=not args.no_video,
