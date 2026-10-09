@@ -126,12 +126,37 @@ ForceVLA (глава 4), где робота учили чистить огур�
 
 ```
 .
-├── README.md        # главная страница: проблема, гипотеза, результаты
-├── chapter1/ … chapter5/   # главы: что прочитал, что сделал, мысли (картинки и GIF — в images/)
-├── notebooks/       # Colab-ноутбуки главы 3 (Octo)
-├── scripts/         # скрипты запуска моделей, дообучения и анализа
-└── results/         # таблицы по каждой попытке (csv, json)
+├── README.md                     # главная страница: проблема, гипотеза, ключевой результат
+├── chapter1/                     # глава 1: OpenVLA (+ videos/ — записи попыток)
+├── chapter2/                     # глава 2: OpenVLA-OFT
+├── chapter3/                     # глава 3: Octo и упрощённый FuSe
+├── chapter4/                     # глава 4: ForceVLA (разбор статьи)
+├── chapter5/                     # глава 5: подведение итогов
+│                                 #   в каждой главе: README.md и images/ с картинками и GIF
+├── notebooks/                    # Colab-ноутбуки главы 3
+│   ├── libero_octo_colab.ipynb           # шаг 1: готовая Octo в LIBERO
+│   └── libero_octo_finetune_colab.ipynb  # шаги 2–3: дообучение и упрощённый FuSe
+├── scripts/
+│   ├── bridge_replay_animation.py  # гл. 1: повтор траектории BridgeData на кинематике WidowX
+│   ├── analyze_libero_results.py   # гл. 1: разбор попыток OpenVLA, таблицы и картинки
+│   ├── libero_octo_eval.py         # гл. 3: проверка Octo в LIBERO, «что модель думает»
+│   ├── octo_finetune_libero.py     # гл. 3: дообучение Octo с датчиками и без
+│   ├── octo_aux_head.py            # гл. 3: «голова» упрощённого FuSe
+│   └── make_demo_gifs.py           # гл. 3: GIF демонстраций из обучающих данных
+├── results/                      # каждая попытка: таблица по шагам (csv), итоги (json)
+│   ├── libero_spatial/                 # гл. 1: OpenVLA (+ видео попыток)
+│   ├── oft_libero_spatial/             # гл. 2: OpenVLA-OFT, в том числе с «замороженными» входами
+│   ├── octo_libero_spatial/            # гл. 3, шаг 1: готовая Octo
+│   ├── octo_finetune_libero_spatial/   # гл. 3, шаги 2–3: дообученные варианты и логи обучения
+│   └── octo_cookie/                    # гл. 3: опыт с коробкой печенья (в главу не вошёл)
+├── pyproject.toml                # описание проекта для uv
+└── LICENSE
 ```
+
+Ноутбуки и скрипты глав 1 и 2 лежат в отдельных ветках — туда ведут кнопки «Open in Colab» в главах:
+[`experiments/libero-colab`](https://github.com/bespatim/vla-manipulation-research/tree/experiments/libero-colab)
+(OpenVLA) и [`experiments/libero-oft`](https://github.com/bespatim/vla-manipulation-research/tree/experiments/libero-oft)
+(OpenVLA-OFT).
 
 ## Как запустить
 
