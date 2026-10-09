@@ -1,0 +1,31 @@
+success,steps,queries,infer_s_per_query,infer_s_per_step,sim_s_per_step,suite,model,task_id,trial,instruction,objects,wall_s
+True,69,18,0.9306766854392158,0.24278522228849106,0.05603188405797103,libero_spatial,octo_libero,0,0,pick up the black bowl between the plate and the ramekin and place it on the plate,akita_black_bowl_1 plate_1,24.2
+True,199,50,0.15274639129638673,0.03837849027547405,0.049586432160804036,libero_spatial,octo_libero,0,1,pick up the black bowl between the plate and the ramekin and place it on the plate,akita_black_bowl_1 plate_1,23.5
+False,220,55,0.15213106762279163,0.03803276690569791,0.04474454545454549,libero_spatial,octo_libero,0,2,pick up the black bowl between the plate and the ramekin and place it on the plate,akita_black_bowl_1 plate_1,23.9
+True,119,30,0.15144933859507242,0.03818050552816952,0.04965798319327729,libero_spatial,octo_libero,1,0,pick up the black bowl next to the ramekin and place it on the plate,akita_black_bowl_1 plate_1,15.4
+False,220,55,0.15061638138510963,0.03765409534627741,0.048370454545454564,libero_spatial,octo_libero,1,1,pick up the black bowl next to the ramekin and place it on the plate,akita_black_bowl_1 plate_1,23.5
+True,145,37,0.1529705202257311,0.039033856885186555,0.05095999999999999,libero_spatial,octo_libero,1,2,pick up the black bowl next to the ramekin and place it on the plate,akita_black_bowl_1 plate_1,18.5
+False,220,55,0.1517398877577348,0.0379349719394337,0.04775318181818182,libero_spatial,octo_libero,2,0,pick up the black bowl from table center and place it on the plate,akita_black_bowl_1 plate_1,24.9
+True,118,30,0.15095932483673097,0.03837948936527058,0.04840932203389832,libero_spatial,octo_libero,2,1,pick up the black bowl from table center and place it on the plate,akita_black_bowl_1 plate_1,15.1
+True,96,24,0.15140482783317566,0.037851206958293915,0.04735000000000001,libero_spatial,octo_libero,2,2,pick up the black bowl from table center and place it on the plate,akita_black_bowl_1 plate_1,12.5
+True,81,21,0.14879727363586426,0.03857707094263147,0.047903703703703705,libero_spatial,octo_libero,3,0,pick up the black bowl on the cookie box and place it on the plate,akita_black_bowl_1 plate_1,10.9
+True,87,22,0.14738817648454147,0.03727057336390704,0.047413793103448267,libero_spatial,octo_libero,3,1,pick up the black bowl on the cookie box and place it on the plate,akita_black_bowl_1 plate_1,11.2
+True,87,22,0.14935594255273993,0.03776816938115263,0.0463,libero_spatial,octo_libero,3,2,pick up the black bowl on the cookie box and place it on the plate,akita_black_bowl_1 plate_1,11.6
+False,220,55,0.15120814496820623,0.03780203624205156,0.05088318181818183,libero_spatial,octo_libero,4,0,pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate,akita_black_bowl_1 plate_1,25.2
+True,140,35,0.15177153859819684,0.03794288464954921,0.052927857142857145,libero_spatial,octo_libero,4,1,pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate,akita_black_bowl_1 plate_1,18.0
+True,120,30,0.15427195231119792,0.03856798807779948,0.05341083333333334,libero_spatial,octo_libero,4,2,pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate,akita_black_bowl_1 plate_1,15.7
+True,95,24,0.15528741478919983,0.039230504788850484,0.060155789473684225,libero_spatial,octo_libero,5,0,pick up the black bowl on the ramekin and place it on the plate,akita_black_bowl_1 plate_1,13.0
+False,220,55,0.15305652184919877,0.03826413046229969,0.05103272727272727,libero_spatial,octo_libero,5,1,pick up the black bowl on the ramekin and place it on the plate,akita_black_bowl_1 plate_1,25.8
+False,220,55,0.15112386616793547,0.03778096654198387,0.04939363636363634,libero_spatial,octo_libero,5,2,pick up the black bowl on the ramekin and place it on the plate,akita_black_bowl_1 plate_1,24.6
+True,140,35,0.1529529094696045,0.03823822736740112,0.05128357142857142,libero_spatial,octo_libero,6,0,pick up the black bowl next to the cookie box and place it on the plate,akita_black_bowl_1 plate_1,16.6
+True,130,33,0.15479878223303592,0.0392950754899245,0.051124615384615386,libero_spatial,octo_libero,6,1,pick up the black bowl next to the cookie box and place it on the plate,akita_black_bowl_1 plate_1,15.8
+True,94,24,0.15523665150006613,0.039634889744697734,0.053084042553191484,libero_spatial,octo_libero,6,2,pick up the black bowl next to the cookie box and place it on the plate,akita_black_bowl_1 plate_1,12.4
+False,220,55,0.15563178062438965,0.03890794515609741,0.05322318181818181,libero_spatial,octo_libero,7,0,pick up the black bowl on the stove and place it on the plate,akita_black_bowl_1 plate_1,25.1
+True,114,29,0.1540682891319538,0.039192810393216315,0.05681929824561404,libero_spatial,octo_libero,7,1,pick up the black bowl on the stove and place it on the plate,akita_black_bowl_1 plate_1,14.8
+True,128,32,0.15366718918085098,0.038416797295212746,0.05853203125000001,libero_spatial,octo_libero,7,2,pick up the black bowl on the stove and place it on the plate,akita_black_bowl_1 plate_1,16.4
+True,89,23,0.15623979983122452,0.04037657748447376,0.04962808988764044,libero_spatial,octo_libero,8,0,pick up the black bowl next to the plate and place it on the plate,akita_black_bowl_1 plate_1,11.7
+True,104,26,0.15570352627680853,0.03892588156920213,0.05202980769230769,libero_spatial,octo_libero,8,1,pick up the black bowl next to the plate and place it on the plate,akita_black_bowl_1 plate_1,13.2
+True,95,24,0.15526016553243002,0.03922362076608758,0.05231684210526317,libero_spatial,octo_libero,8,2,pick up the black bowl next to the plate and place it on the plate,akita_black_bowl_1 plate_1,12.3
+True,137,35,0.15303280012948173,0.03909597083599898,0.052266423357664266,libero_spatial,octo_libero,9,0,pick up the black bowl on the wooden cabinet and place it on the plate,akita_black_bowl_1 plate_1,16.4
+False,220,55,0.15346793694929642,0.038366984237324105,0.04640454545454549,libero_spatial,octo_libero,9,1,pick up the black bowl on the wooden cabinet and place it on the plate,akita_black_bowl_1 plate_1,24.0
+True,131,33,0.1553099877906568,0.03912389005413492,0.05319160305343514,libero_spatial,octo_libero,9,2,pick up the black bowl on the wooden cabinet and place it on the plate,akita_black_bowl_1 plate_1,16.0

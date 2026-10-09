@@ -1,0 +1,18 @@
+{
+ "data_dir": "/content/libero_rlds",
+ "dataset": "libero_spatial_no_noops",
+ "pretrained": "hf://rail-berkeley/octo-small-1.5",
+ "wrist": false,
+ "proprio": false,
+ "steps": 3000,
+ "batch_size": 32,
+ "lr": 0.0003,
+ "warmup": 500,
+ "shuffle": 5000,
+ "save_every": 1000,
+ "save_dir": "/content/ckpt/cam",
+ "freeze_transformer": false,
+ "inputs": [
+  "primary"
+ ]
+}

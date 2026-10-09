@@ -1,0 +1,2 @@
+success,steps,queries,infer_s_per_query,infer_s_per_step,sim_s_per_step,suite,model,task_id,trial,instruction,objects,wall_s
+False,220,55,0.24147943149913442,0.060369857874783606,0.03818954545454545,libero_spatial,local,2,0,pick up the cookie box and place it on the plate,cookies_1 plate_1 akita_black_bowl_1,24.7

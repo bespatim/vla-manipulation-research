@@ -1,0 +1,36 @@
+# Окружение Python 3.10 для Octo в LIBERO (глава 3).
+# Octo — версии из requirements.txt репозитория octo-models/octo; JAX с CUDA и PyTorch (нужен LIBERO
+# только для чтения начальных расстановок) ставятся отдельно — см. ноутбук.
+numpy==1.24.4
+ml_dtypes==0.2.0
+scipy==1.12.0
+chex==0.1.85
+optax==0.1.5
+flax==0.7.5
+distrax==0.1.5
+orbax-checkpoint==0.4.4
+tensorflow==2.15.0
+keras==2.15.0
+tensorflow_probability==0.23.0
+tensorflow_datasets==4.9.2
+# новые tensorflow-metadata требуют protobuf новее, чем у TensorFlow 2.15 (ImportError runtime_version)
+tensorflow-metadata==1.14.0
+dlimp @ git+https://github.com/kvablack/dlimp@d08da3852c149548aaa8551186d619d87375df08
+transformers==4.34.1
+ml_collections
+einops>=0.6.1
+absl-py
+tqdm
+huggingface_hub
+# LIBERO — как в главах 1–2
+robosuite==1.4.1
+mujoco==3.2.7
+easydict
+gym
+cloudpickle
+future
+networkx
+pyyaml
+imageio[ffmpeg]
+pandas
+matplotlib
