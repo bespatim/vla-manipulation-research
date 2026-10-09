@@ -1,0 +1,20 @@
+{
+  "suite": "libero_spatial",
+  "model": "local",
+  "checkpoint": "/content/ckpt/lib_cam_proprio",
+  "inputs": [
+    "primary",
+    "proprio"
+  ],
+  "action_horizon": 4,
+  "exec_steps": 4,
+  "episodes": 30,
+  "success_rate": 66.66666666666667,
+  "paper_octo_success_rate": 78.9,
+  "instruction": null,
+  "goal_on": null,
+  "freeze_proprio": true,
+  "mean_infer_s_per_query": 0.07227038640551096,
+  "mean_infer_s_per_step": 0.018194658279154317,
+  "mean_sim_s_per_step": 0.039843132493978
+}
