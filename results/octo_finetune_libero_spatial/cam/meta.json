@@ -1,0 +1,18 @@
+{
+  "suite": "libero_spatial",
+  "model": "local",
+  "checkpoint": "/content/ckpt/cam",
+  "inputs": [
+    "primary"
+  ],
+  "action_horizon": 4,
+  "exec_steps": 4,
+  "episodes": 30,
+  "success_rate": 0.0,
+  "paper_octo_success_rate": 78.9,
+  "instruction": null,
+  "goal_on": null,
+  "mean_infer_s_per_query": 0.1560774209282615,
+  "mean_infer_s_per_step": 0.03901935523206537,
+  "mean_sim_s_per_step": 0.04464349999999998
+}
