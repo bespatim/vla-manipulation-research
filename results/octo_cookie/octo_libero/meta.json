@@ -1,0 +1,22 @@
+{
+  "suite": "libero_spatial",
+  "model": "octo_libero",
+  "checkpoint": "cyrusneary/octo-finetuned-libero/2025-06-20_octo_small_1p5_libero_finetune/octo_finetune/experiment_20250620_175739@60000",
+  "inputs": [
+    "primary"
+  ],
+  "action_horizon": 4,
+  "exec_steps": 4,
+  "episodes": 1,
+  "success_rate": 0.0,
+  "paper_octo_success_rate": 78.9,
+  "instruction": "pick up the cookie box and place it on the plate",
+  "goal_on": [
+    "cookies_1",
+    "plate_1"
+  ],
+  "freeze_proprio": false,
+  "mean_infer_s_per_query": 0.23279672535982998,
+  "mean_infer_s_per_step": 0.058199181339957495,
+  "mean_sim_s_per_step": 0.0373018181818182
+}

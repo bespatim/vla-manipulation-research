@@ -1,0 +1,20 @@
+{
+ "data_dir": "/content/libero_rlds",
+ "dataset": "libero_spatial_no_noops",
+ "pretrained": "octo_libero",
+ "wrist": false,
+ "proprio": true,
+ "steps": 3000,
+ "batch_size": 32,
+ "lr": 0.0001,
+ "warmup": 300,
+ "shuffle": 5000,
+ "save_every": 1000,
+ "save_dir": "/content/ckpt/lib_cam_proprio_fuse",
+ "freeze_transformer": false,
+ "fuse_aux": 0.5,
+ "inputs": [
+  "primary",
+  "proprio"
+ ]
+}

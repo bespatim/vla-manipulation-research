@@ -1,0 +1,23 @@
+{
+  "suite": "libero_spatial",
+  "model": "local",
+  "checkpoint": "/content/ckpt/lib_cam_proprio",
+  "inputs": [
+    "primary",
+    "proprio"
+  ],
+  "action_horizon": 4,
+  "exec_steps": 4,
+  "episodes": 1,
+  "success_rate": 0.0,
+  "paper_octo_success_rate": 78.9,
+  "instruction": "pick up the cookie box and place it on the plate",
+  "goal_on": [
+    "cookies_1",
+    "plate_1"
+  ],
+  "freeze_proprio": false,
+  "mean_infer_s_per_query": 0.24147943149913442,
+  "mean_infer_s_per_step": 0.060369857874783606,
+  "mean_sim_s_per_step": 0.03818954545454545
+}
