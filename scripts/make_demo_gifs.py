@@ -8,6 +8,7 @@
     python scripts/make_demo_gifs.py --data-dir /content/libero_rlds --count 2 --out /content/demo_gifs
 """
 import argparse
+import os
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +23,7 @@ def main():
     p.add_argument("--out", required=True)
     args = p.parse_args()
 
+    os.environ["MPLBACKEND"] = "Agg"  # Colab передаёт дочерним процессам свой inline-бэкенд
     import matplotlib
     import tensorflow as tf
     import tensorflow_datasets as tfds
