@@ -97,6 +97,31 @@ def robot_state(obs):
     return np.concatenate([obs["robot0_eef_pos"], axis_angle, obs["robot0_gripper_qpos"]])
 
 
+_FONT = None
+
+
+def caption_desc(frame, desc, truth, frozen):
+    """Подпись под кадром: что модель «думает» о захвате (зелёным — верно, красным — ошибается) и правда."""
+    global _FONT
+    import matplotlib
+    from PIL import Image, ImageDraw, ImageFont
+
+    from octo_aux_head import GRIP_TEXT, HEIGHT_TEXT
+
+    if _FONT is None:
+        _FONT = ImageFont.truetype(str(Path(matplotlib.get_data_path()) / "fonts/ttf/DejaVuSans.ttf"), 13)
+    img = Image.fromarray(frame)
+    out = Image.new("RGB", (img.width, img.height + 44), (0, 0, 0))
+    out.paste(img, (0, 0))
+    d = ImageDraw.Draw(out)
+    ok = desc == truth
+    d.text((6, img.height + 4), f"модель думает: {GRIP_TEXT[desc[0]]}, {HEIGHT_TEXT[desc[1]]}",
+           fill=(80, 220, 80) if ok else (255, 90, 90), font=_FONT)
+    d.text((6, img.height + 23), f"датчики на самом деле: {GRIP_TEXT[truth[0]]}, {HEIGHT_TEXT[truth[1]]}"
+           + ("   (модели подаются замороженные)" if frozen else ""), fill=(230, 230, 230), font=_FONT)
+    return np.asarray(out)
+
+
 def to_env_action(a):
     """Захват: модель 1 = открыт, 0 = закрыт → симулятор −1 = открыт, +1 = закрыт."""
     a = np.asarray(a, dtype=np.float64).copy()
@@ -183,6 +208,10 @@ class OctoPolicy:
         self._jax = jax
         self._rng = jax.random.PRNGKey(seed)
         self._task_cache = {}
+        # Упрощённый FuSe (scripts/octo_aux_head.py): если у модели есть голова описаний, на каждом запросе
+        # записываем, что модель «думает» о захвате и его высоте. На действия это не влияет.
+        self.has_aux = "aux" in self.model.config["model"]["heads"]
+        self.last_desc = None
 
     def __call__(self, image, instruction, wrist_image=None, proprio=None):
         if instruction not in self._task_cache:
@@ -194,6 +223,13 @@ class OctoPolicy:
             s = self.proprio_stats
             obs["proprio"] = ((proprio - np.asarray(s["mean"])) / (np.asarray(s["std"]) + 1e-8))[None, None]
             obs["proprio"] = obs["proprio"].astype(np.float32)
+        if self.has_aux:
+            emb = self.model.run_transformer(obs, self._task_cache[instruction], obs["timestep_pad_mask"],
+                                             train=False)
+            logits = self.model.module.apply({"params": self.model.params}, emb,
+                                             method=lambda m, e: m.heads["aux"](e, train=False))
+            lg = np.asarray(logits)[0, -1]
+            self.last_desc = (int(lg[:4].argmax()), int(lg[4:].argmax()))
         self._rng, key = self._jax.random.split(self._rng)
         actions = self.model.sample_actions(obs, self._task_cache[instruction],
                                             unnormalization_statistics=self.action_stats, rng=key)
@@ -215,6 +251,7 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects,
     frozen_state = None  # для --freeze-proprio: показания датчиков с первого запроса («датчик завис»)
     rows, frames, success, t, step = [], [], False, 0, 0
     infer_total, sim_total, n_queries = 0.0, 0.0, 0
+    desc = None  # (захват, высота) по мнению модели — обновляется на каждом запросе
     while t < max_steps + NUM_STEPS_WAIT:
         if t < NUM_STEPS_WAIT:  # ждём, пока предметы упадут на стол
             obs, _, done, _ = env.step([0, 0, 0, 0, 0, 0, -1])
@@ -235,6 +272,7 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects,
             infer_s = time.time() - t0
             infer_total += infer_s
             n_queries += 1
+            desc = policy.last_desc if getattr(policy, "has_aux", False) else None
         raw = np.asarray(queue.popleft(), dtype=np.float64)
         action = to_env_action(raw)
 
@@ -249,8 +287,18 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects,
             if f"{o}_pos" in obs:
                 row.update({f"{o}_{a}": v for a, v in zip("xyz", obs[f"{o}_pos"])})
         row.update(probe.measure())
+        truth = None
+        if desc is not None:
+            from octo_aux_head import describe
+
+            g, h = describe(robot_state(obs))  # правда — по живым датчикам, даже если модели подаются замороженные
+            truth = (int(g), int(h))
+            row.update({"model_grip": desc[0], "model_height": desc[1], "true_grip": truth[0], "true_height": truth[1]})
         if video_path is not None:
-            frames.append(np.concatenate([agentview(obs), wrist(obs)], axis=1))
+            frame = np.concatenate([agentview(obs), wrist(obs)], axis=1)
+            if desc is not None:
+                frame = caption_desc(frame, desc, truth, getattr(policy, "freeze_proprio", False))
+            frames.append(frame)
 
         t0 = time.time()
         obs, _, done, _ = env.step(action.tolist())
@@ -271,7 +319,12 @@ def run_episode(policy, env, instruction, init_state, max_steps, objects,
             w.writerows(rows)
     if video_path is not None and frames:
         imageio.mimsave(video_path, frames, fps=20)  # 20 Гц — частота управления LIBERO
-    return {"success": success, "steps": step, "queries": n_queries,
+    described = [r for r in rows if "model_grip" in r]
+    extra = {}
+    if described:
+        extra = {"desc_acc_grip": float(np.mean([r["model_grip"] == r["true_grip"] for r in described])),
+                 "desc_acc_height": float(np.mean([r["model_height"] == r["true_height"] for r in described]))}
+    return {**extra, "success": success, "steps": step, "queries": n_queries,
             "infer_s_per_query": infer_total / max(n_queries, 1),
             "infer_s_per_step": infer_total / max(step, 1), "sim_s_per_step": sim_total / max(step, 1)}
 
