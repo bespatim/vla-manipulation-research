@@ -50,6 +50,9 @@ def main() -> None:
     p.add_argument("--save-every", type=int, default=1000)
     p.add_argument("--save-dir", required=True)
     p.add_argument("--freeze-transformer", action="store_true", help="учить только новые блоки и голову")
+    p.add_argument("--fuse-aux", type=float, default=0.0,
+                   help="вес дополнительного задания «описать показания датчиков» (упрощённый FuSe, "
+                        "scripts/octo_aux_head.py); 0 — выключено")
     args = p.parse_args()
 
     os.environ["MPLBACKEND"] = "Agg"
@@ -58,6 +61,7 @@ def main() -> None:
     # а при 90% не хватало места cuDNN (CUDNN_STATUS_EXECUTION_FAILED)
     os.environ.pop("XLA_PYTHON_CLIENT_PREALLOCATE", None)
     import jax
+    import jax.numpy as jnp
     import numpy as np
     import optax
     import tensorflow as tf
@@ -128,6 +132,14 @@ def main() -> None:
     if args.proprio:
         config["model"]["observation_tokenizers"]["proprio"] = ModuleSpec.create(
             LowdimObsTokenizer, n_bins=256, bin_type="normal", low=-2.0, high=2.0, obs_keys=["proprio"])
+    if args.fuse_aux > 0:
+        # Упрощённый FuSe: голова, которая по токену readout_action называет состояние захвата и его высоту
+        assert args.proprio, "подписи считаются по показаниям датчиков: нужен --proprio"
+        from octo_aux_head import SensorDescriptionHead, describe
+
+        config["model"]["heads"]["aux"] = ModuleSpec.create(SensorDescriptionHead)
+        p_mean = np.asarray(dataset.dataset_statistics["proprio"]["mean"], dtype=np.float32)
+        p_std = np.asarray(dataset.dataset_statistics["proprio"]["std"], dtype=np.float32)
 
     model = OctoModel.from_config(config, example_batch, text_processor, verbose=True,
                                   dataset_statistics=dataset.dataset_statistics)
@@ -146,8 +158,21 @@ def main() -> None:
         bound = model.module.bind({"params": params}, rngs={"dropout": rng})
         emb = bound.octo_transformer(batch["observation"], batch["task"],
                                      batch["observation"]["timestep_pad_mask"], train=train)
-        return bound.heads["action"].loss(emb, batch["action"], batch["observation"]["timestep_pad_mask"],
-                                          batch["action_pad_mask"], train=train)
+        loss, info = bound.heads["action"].loss(emb, batch["action"], batch["observation"]["timestep_pad_mask"],
+                                                batch["action_pad_mask"], train=train)
+        if args.fuse_aux > 0:
+            # подписи — по сырым показаниям датчиков (в данных они нормализованы: (x − mean) / (std + 1e-8))
+            raw = batch["observation"]["proprio"] * (p_std + 1e-8) + p_mean
+            grip, height = describe(raw)
+            logits = bound.heads["aux"](emb, train=train)
+            mask = batch["observation"]["timestep_pad_mask"].astype(jnp.float32)
+            ce = lambda lg, y: (optax.softmax_cross_entropy_with_integer_labels(lg, y) * mask).sum() / mask.sum()
+            acc = lambda lg, y: ((jnp.argmax(lg, -1) == y) * mask).sum() / mask.sum()
+            lg_grip, lg_height = logits[..., :4], logits[..., 4:]
+            aux = ce(lg_grip, grip) + ce(lg_height, height)
+            info = {**info, "aux_loss": aux, "aux_acc_grip": acc(lg_grip, grip), "aux_acc_height": acc(lg_height, height)}
+            loss = loss + args.fuse_aux * aux
+        return loss, info
 
     @jax.jit
     def train_step(state, batch):
@@ -170,9 +195,14 @@ def main() -> None:
             rate = i / (time.time() - t0)
             row = {"step": i, "loss": float(np.mean(recent)), "steps_per_s": rate,
                    "eta_min": (args.steps - i) / rate / 60}
+            extra = ""
+            if args.fuse_aux > 0:
+                row.update({k: float(jax.device_get(info[k])) for k in ("aux_loss", "aux_acc_grip", "aux_acc_height")})
+                extra = (f" | описания: ошибка {row['aux_loss']:.3f}, угадано захват {row['aux_acc_grip']:.0%}, "
+                         f"высота {row['aux_acc_height']:.0%}")
             log.append(row)
             print(f"шаг {i}/{args.steps} | ошибка {row['loss']:.4f} | {rate:.2f} шаг/с | "
-                  f"осталось ~{row['eta_min']:.0f} мин", flush=True)
+                  f"осталось ~{row['eta_min']:.0f} мин{extra}", flush=True)
             (save_dir / "train_log.json").write_text(json.dumps(log, indent=1))
         if i % args.save_every == 0 or i == args.steps:
             state.model.save_pretrained(step=i, checkpoint_path=str(save_dir))
