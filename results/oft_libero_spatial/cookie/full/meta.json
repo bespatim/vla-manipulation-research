@@ -1,0 +1,20 @@
+{
+  "suite": "libero_spatial",
+  "condition": "full",
+  "freeze_wrist": false,
+  "freeze_proprio": false,
+  "episodes": 1,
+  "success_rate": 0.0,
+  "paper_success_rate_full": 97.6,
+  "instruction": "pick up the cookie box and place it on the plate",
+  "goal_on": [
+    "cookies_1",
+    "plate_1"
+  ],
+  "checkpoint": "moojink/openvla-7b-oft-finetuned-libero-spatial",
+  "precision": "4bit-fp16",
+  "seed": 7,
+  "mean_infer_s_per_query": 0.7549194608415876,
+  "mean_infer_s_per_step": 0.0960806586525657,
+  "mean_sim_s_per_step": 0.041038181818181814
+}

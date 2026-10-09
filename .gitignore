@@ -25,3 +25,6 @@ outputs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Видео попыток OpenVLA-OFT (~60 МБ) не храним — в главе 2 есть GIF; таблицы по шагам храним
+results/oft_libero_spatial/**/*.mp4
