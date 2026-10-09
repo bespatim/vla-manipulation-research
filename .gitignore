@@ -31,3 +31,5 @@ results/octo_libero_spatial/**/*.mp4
 results/octo_finetune_libero_spatial/**/*.mp4
 results/octo_cookie/**/*.mp4
 results/demo_gifs/
+# Видео попыток OpenVLA-OFT (~60 МБ) не храним — в главе 2 есть GIF; таблицы по шагам храним
+results/oft_libero_spatial/**/*.mp4
